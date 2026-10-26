@@ -1,10 +1,10 @@
 {
-    "name": "Template Plugin",
-    "description": "A plugin for use as a template.",
+    "name": "Quiet Delete",
+    "description": "Deletes messages via nonce replacement to bypass client and bot message loggers.",
     "authors": [
         {
-            "name": "You!",
-            "id": "YOUR_ID_HERE"
+            "name": "RileyBeeRBLX",
+            "id": "1486004684001902755"
         }
     ],
     "main": "src/index.ts",
