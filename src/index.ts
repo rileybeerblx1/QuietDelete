@@ -5,7 +5,6 @@ import { getAssetIDByName } from "@vendetta/ui/assets";
 import { React } from "@vendetta/metro/common";
 import Settings from "./Settings";
 
-// Discord Modules
 const MessageActions = findByProps("sendMessage", "deleteMessage");
 const UserStore = findByProps("getCurrentUser");
 const NonceGenerator = findByProps("generateNonce");
@@ -18,18 +17,17 @@ async function executeQuietDelete(message: any) {
         // 1. Generate a new nonce
         const nonce = NonceGenerator.generateNonce();
 
-        // 2. Send an invisible message with the same nonce. 
-        // Discord client uses nonces to replace existing messages locally.
+        // 2. Send an invisible message with the same nonce
         const invisibleMsg = await MessageActions.sendMessage(message.channel_id, {
-            content: "\u200b", // Zero-width space to bypass blank-message filters
+            content: "\u200b", // Zero-width space
             nonce: nonce,
             tts: false
         });
 
-        // 3. Immediately delete the original message
+        // 3. Delete the original message
         await MessageActions.deleteMessage(message.channel_id, message.id);
 
-        // 4. Delete the invisible replacement message slightly after
+        // 4. Delete the invisible replacement
         setTimeout(() => {
             MessageActions.deleteMessage(message.channel_id, invisibleMsg.id).catch(() => {});
         }, 100);
@@ -43,48 +41,50 @@ async function executeQuietDelete(message: any) {
 
 export default {
     onLoad() {
-        // Patch the ActionSheet that appears when you long-press a message
+        // Patch the ActionSheet
         patches.push(after("openLazy", LazyActionSheet, (args, res) => {
             const [component, key, props] = args;
             
             if (key === "MessageLongPressActionSheet") {
                 const message = props?.message;
-                
-                // Only show the button for your own messages
                 if (!message || message.author.id !== UserStore.getCurrentUser()?.id) return;
 
-                // Intercept the React element to inject our custom button
-                if (res && res.props && res.props.children) {
-                    const originalChildren = res.props.children;
+                // Patch the React Component returned by the ActionSheet
+                const originalRender = res.type;
+                res.type = function PatchedActionSheet(...props) {
+                    const rendered = originalRender(...props);
                     
-                    // We wrap the original children to add our button at the top
-                    res.props.children = (parentProps) => {
-                        const original = originalChildren(parentProps);
-                        
-                        // Create our custom button item
-                        const quietDeleteButton = React.createElement(React.Fragment, null, {
+                    if (!rendered || !rendered.props || !rendered.props.children) return rendered;
+
+                    // Create the custom button row
+                    const quietDeleteButton = React.createElement(
+                        require("@vendetta/ui/components").Forms.FormRow || "View", // Fallback if FormRow fails
+                        {
                             label: "Quiet Delete (Anti-Logger)",
                             icon: getAssetIDByName("ic_message_delete"),
-                            action: () => executeQuietDelete(message)
-                        });
-
-                        // Inject the button into the action sheet's children
-                        if (original && original.props && original.props.children) {
-                            if (Array.isArray(original.props.children)) {
-                                original.props.children.unshift(quietDeleteButton);
-                            } else {
-                                original.props.children = [quietDeleteButton, original.props.children];
+                            onPress: () => {
+                                LazyActionSheet.hideActionSheet();
+                                executeQuietDelete(message);
                             }
                         }
-                        return original;
-                    };
-                }
+                    );
+
+                    // Inject it into the children array
+                    const children = Array.isArray(rendered.props.children) 
+                        ? rendered.props.children 
+                        : [rendered.props.children];
+
+                    // Put it right before the normal "Delete Message" button
+                    children.splice(children.length - 1, 0, quietDeleteButton);
+
+                    // Return the new element with our button added
+                    return React.cloneElement(rendered, { children });
+                };
             }
         }));
     },
     
     onUnload() {
-        // Remove all patches when the plugin is disabled
         patches.forEach((unpatch) => unpatch());
         patches = [];
     },
